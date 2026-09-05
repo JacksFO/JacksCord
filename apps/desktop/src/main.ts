@@ -8,6 +8,7 @@ import {
   mkdirSync, copyFileSync,
 } from 'node:fs'
 import { createHash } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
 import { autoUpdater } from 'electron-updater'
 import { matchGame } from './matchgame.js'
 import { movedDeliberately } from './seek.js'
@@ -2138,8 +2139,60 @@ ipcMain.handle('creds:forget', (_e, server: string) => {
 
 // ----------------------------------------------------------------- boot ----
 
+/**
+ * Say again what was already asked for, in case Windows has stopped agreeing.
+ *
+ * "Start with Windows" was stored here and handed to Windows exactly once -
+ * at the moment somebody pressed the switch - and never again. Which is fine
+ * until the thing Windows was told about stops existing: this app was called
+ * JacksCord, the settings carried over under the new name, and the entry
+ * Windows kept still pointed at an executable that had been uninstalled. So
+ * the switch read "on", was on as far as this app knew, and started nothing
+ * at all for a fortnight.
+ *
+ * Asked and answered every launch now. Windows is the one that knows whether
+ * it will actually do it, so it is the one to ask rather than a file of ours
+ * saying what it ought to think.
+ */
+function reconcileLoginItem(): void {
+  try {
+    const want = readPrefs().launchOnStartup
+    const has = app.getLoginItemSettings({ args: ['--hidden'] }).openAtLogin
+    if (want === has) return
+    app.setLoginItemSettings({ openAtLogin: want, args: ['--hidden'] })
+  } catch {
+    /* A locked-down profile can refuse this. Not worth a crash on the way up,
+       and the switch still says what it will do the next time it is pressed. */
+  }
+}
+
+/**
+ * And clear away what the old name left behind.
+ *
+ * The entry Windows kept for JacksCord points at a folder that was removed
+ * with it, so it starts nothing and cannot be turned off from inside an app
+ * that no longer exists - it simply sits in the startup list looking broken.
+ * Only ours, only when it really does point at something that is not there.
+ */
+function forgetOldLoginItem(): void {
+  if (process.platform !== 'win32') return
+  try {
+    const KEY = 'HKCU\Software\Microsoft\Windows\CurrentVersion\Run'
+    const OLD = 'electron.app.JacksCord'
+    const read = spawnSync('reg', ['query', KEY, '/v', OLD], { encoding: 'utf8' })
+    if (read.status !== 0) return
+    const exe = /"([^"]+\.exe)"/.exec(read.stdout ?? '')?.[1]
+    if (!exe || existsSync(exe)) return
+    spawnSync('reg', ['delete', KEY, '/v', OLD, '/f'])
+  } catch {
+    /* Tidiness only. Nothing here is worth failing a launch over. */
+  }
+}
+
 app.whenReady().then(() => {
   if (!isDev) registerAppProtocol()
+  reconcileLoginItem()
+  forgetOldLoginItem()
   // Before the main window, because the whole point is to fill the time it
   // takes that one to become ready.
   /* No splash for a login start: it is a window, and the whole point is that

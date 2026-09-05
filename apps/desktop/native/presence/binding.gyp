@@ -10,8 +10,8 @@
           "libraries": [ "-lwindowsapp.lib", "-lshell32.lib", "-lgdi32.lib", "-luser32.lib" ],
           "msvs_settings": {
             "VCCLCompilerTool": {
-              "ExceptionHandling": 1,
-              "AdditionalOptions": [ "/std:c++17", "/EHsc", "/bigobj" ]
+              "ExceptionHandling": 2,
+              "AdditionalOptions": [ "/std:c++17", "/EHa", "/bigobj" ]
             }
           }
         } ]

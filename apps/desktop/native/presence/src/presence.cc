@@ -40,6 +40,7 @@
 #include <algorithm>
 #include <chrono>
 #include <atomic>
+#include <mutex>
 #include <cctype>
 #include <vector>
 
@@ -650,12 +651,45 @@ struct Watcher {
   winrt::event_token onPlaybackChanged{};
   winrt::event_token onTimelineChanged{};
   Napi::ThreadSafeFunction tell;
-  bool running = false;
+  /* Read without the lock by the handlers, so they can leave without waiting
+     for a teardown that is waiting for them. */
+  std::atomic<bool> running{false};
 };
 
 Watcher watcher;
 
+/*
+ * One thread at a time in here.
+ *
+ * Everything above is touched from four places at once and was guarded by
+ * nothing at all: the completion that starts the watching, the two manager
+ * events - which fire on whichever pool thread is free, and can fire
+ * together - the reader on its worker, and whoever calls stop.
+ *
+ * Following a session is not one write. It is: let go of three handlers, drop
+ * the session, choose another, take three more. Two of those running at once
+ * hand back the same handlers twice and drop the same session twice, and the
+ * second time is against something already freed. Which is a crash inside
+ * either this file or the Windows media DLL depending on whose frame is on
+ * top when it goes - and both of those have been in the crash log every few
+ * hours since this was written.
+ *
+ * Recursive because starting takes the lock and then follows a session, which
+ * takes it again.
+ *
+ * The rule for holding it: only for reads and writes of the fields above.
+ * Handing a handler back can block until a call already inside it returns, so
+ * doing that while holding this would be a deadlock the moment the call it is
+ * waiting for wants the lock. Anything blocking happens on a local copy after
+ * the lock has been let go.
+ */
+std::recursive_mutex watcherLock;
+
 bool HeldManager(GlobalSystemMediaTransportControlsSessionManager& out) {
+  /* Under the lock, because this runs on a worker while the watcher may be
+     replacing or dropping the very thing being copied. Copying takes a
+     reference, so what goes back stays alive on its own afterwards. */
+  std::lock_guard<std::recursive_mutex> hold(watcherLock);
   if (!watcher.running || !watcher.manager) return false;
   out = watcher.manager;
   return true;
@@ -728,6 +762,17 @@ bool Seeked(GlobalSystemMediaTransportControlsSession const& session) {
 
 /** Follow whichever session is current, and let go of the last one. */
 void FollowSession() {
+  /*
+   * Held for the whole of it, because this is a sequence and not a write -
+   * two of these at once is the crash this lock exists for.
+   *
+   * Handing back a session's handlers is done in here, which is safe: those
+   * handlers take no lock, so a call already inside one cannot be waiting on
+   * this. The manager's handlers are the ones that do, and they are only ever
+   * handed back by stop, outside the lock.
+   */
+  std::lock_guard<std::recursive_mutex> hold(watcherLock);
+  if (!watcher.running) return;
   try {
     if (watcher.session) {
       watcher.session.MediaPropertiesChanged(watcher.onMediaChanged);
@@ -836,6 +881,10 @@ Napi::Value WatchMedia(const Napi::CallbackInfo& info) {
         return;
       }
       try {
+        /* Recursive: this takes the lock and then follows a session, which
+           takes it again. */
+        std::lock_guard<std::recursive_mutex> hold(watcherLock);
+        if (!watcher.running) return;
         watcher.manager = op.GetResults();
         watcher.onSessionChanged = watcher.manager.CurrentSessionChanged([](auto&&, auto&&) {
           FollowSession();
@@ -872,26 +921,53 @@ Napi::Value WatchMedia(const Napi::CallbackInfo& info) {
 
 Napi::Value StopWatchingMedia(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
-  if (!watcher.running) return Napi::Boolean::New(env, false);
-  watcher.running = false;
+
+  /*
+   * Taken away first, given back afterwards.
+   *
+   * Handing a handler back waits for any call already inside it to return,
+   * and the manager's handlers follow a session, which wants the lock. So
+   * doing that while holding the lock is a deadlock: this waits for the
+   * handler, the handler waits for this.
+   *
+   * Instead the lock is held only long enough to take the objects out of the
+   * watcher and say it has stopped. Anything already on its way in sees that
+   * and leaves without touching a thing, and the waiting is then done out
+   * here on copies nobody else can reach.
+   */
+  GlobalSystemMediaTransportControlsSession session{nullptr};
+  GlobalSystemMediaTransportControlsSessionManager manager{nullptr};
+  winrt::event_token media{}, playback{}, timeline{}, current{}, sessions{};
+  {
+    std::lock_guard<std::recursive_mutex> hold(watcherLock);
+    if (!watcher.running) return Napi::Boolean::New(env, false);
+    watcher.running = false;
+    session = watcher.session;   watcher.session = nullptr;
+    manager = watcher.manager;   watcher.manager = nullptr;
+    media = watcher.onMediaChanged;
+    playback = watcher.onPlaybackChanged;
+    timeline = watcher.onTimelineChanged;
+    current = watcher.onSessionChanged;
+    sessions = watcher.onSessionsChanged;
+  }
+
   try {
-    if (watcher.session) {
-      watcher.session.MediaPropertiesChanged(watcher.onMediaChanged);
-      watcher.session.PlaybackInfoChanged(watcher.onPlaybackChanged);
-      watcher.session.TimelinePropertiesChanged(watcher.onTimelineChanged);
-      watcher.session = nullptr;
+    if (session) {
+      session.MediaPropertiesChanged(media);
+      session.PlaybackInfoChanged(playback);
+      session.TimelinePropertiesChanged(timeline);
     }
-    if (watcher.manager) {
-      watcher.manager.CurrentSessionChanged(watcher.onSessionChanged);
+    if (manager) {
+      manager.CurrentSessionChanged(current);
       /* And the one added for players appearing while another holds the
          session. Every other handler here is given back; leaving this one
          subscribed leaves a callback pointing at a manager we have dropped,
          on the shutdown path of a process that has to exit cleanly for an
          update to be able to replace it. */
-      watcher.manager.SessionsChanged(watcher.onSessionsChanged);
-      watcher.manager = nullptr;
+      manager.SessionsChanged(sessions);
     }
   } catch (...) { /* already gone */ }
+  ForgetPosition();
   watcher.tell.Release();
   return Napi::Boolean::New(env, true);
 }
