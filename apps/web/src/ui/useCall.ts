@@ -8,6 +8,7 @@ import {
   forgetVoice, keepVoiceFresh, rememberShareSource, rememberVoice, shareSource,
 } from '../lib/resume'
 import { shareQuality, type SharePreset } from '../lib/sharequality'
+import { rememberLevel } from '../lib/levels'
 import type { Api } from '../lib/api'
 import type { Id } from '../lib/wire'
 
@@ -365,6 +366,9 @@ export function useCall(server: Api, mic: MicChoice): CallControls {
 
   const setLevel = useCallback((key: StreamKey, level: number) => {
     setCall((c) => ({ ...c, levels: new Map(c.levels).set(key, level) }))
+    /* And kept, so the friend whose game is always twice as loud as everybody
+       else does not have to be turned down again every single call. */
+    rememberLevel(key, level)
   }, [])
 
   return {

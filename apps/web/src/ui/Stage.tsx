@@ -48,6 +48,36 @@ export function Stage({ world, call, controls, name, master, onClose }: {
   const [big, setBig] = useState<StreamKey | null>(null)
   const body = useRef<HTMLDivElement>(null)
   const tiles = tilesOf(call, me)
+  /*
+   * What is actually filling the call, which is not always what was asked to.
+   *
+   * `big` is a key, and a key outlives the thing it names: somebody stops
+   * sharing and their tile leaves the grid while this still points at it.
+   * The stylesheet then hides every cell and shows the expanded one - and
+   * there is no expanded one - so the whole stage went blank, with everybody
+   * in the call still there and nothing on screen. Reported exactly that way,
+   * from full screen.
+   *
+   * Read through rather than trusted, so the drawing can never disagree with
+   * what is in the room; the state is put straight below.
+   */
+  const filling = big !== null && tiles.includes(big) ? big : null
+  /*
+   * And the state put straight, not only the drawing.
+   *
+   * Without this it would come back on its own: the key is still held, so the
+   * moment that person shares again their tile would fill the call, which
+   * nobody asked for a second time.
+   *
+   * Depends on one plain string rather than the array, because tilesOf builds
+   * a new array every render - and the keys are joined with a character that
+   * cannot appear in one.
+   */
+  const tileList = tiles.join('|')
+  useEffect(() => {
+    const there = tileList.split('|')
+    setBig((was) => (was !== null && !there.includes(was) ? null : was))
+  }, [tileList])
   const facesOnly = call.members.filter(
     (m) => !tiles.some((k) => partsOf(k).id === m.id),
   )
@@ -74,8 +104,8 @@ export function Stage({ world, call, controls, name, master, onClose }: {
           * carries its own faces, and a set in the header could only be
           * about one of them without saying which.
           */}
-        {big && (
-          <Spectators people={watchersOf(world, big, me)} size="sm"
+        {filling && (
+          <Spectators people={watchersOf(world, filling, me)} size="sm"
             nameFor={(u) => nameIn(world, here, u)} />
         )}
         {/* Only worth offering when there is more than one to decide about —
@@ -101,7 +131,7 @@ export function Stage({ world, call, controls, name, master, onClose }: {
       <div
         ref={body}
         className={
-          big ? 'stbody big'
+          filling ? 'stbody big'
             : tiles.length === 1 && call.members.length <= 2 ? 'stbody one' : 'stbody'
         }
       >
@@ -112,8 +142,8 @@ export function Stage({ world, call, controls, name, master, onClose }: {
             call={call}
             world={world}
             me={me}
-            up={big === key}
-            onGrow={() => setBig(big === key ? null : key)}
+            up={filling === key}
+            onGrow={() => setBig(filling === key ? null : key)}
             onWatch={(on) => controls.setWatching(key, on)}
             onOptions={() => setMenu(key)}
           />
@@ -121,9 +151,12 @@ export function Stage({ world, call, controls, name, master, onClose }: {
         {facesOnly.map((m) => {
           const person = world.people.get(m.id) ?? fallback(m.id, m.name)
           const loud = call.speaking.has(m.id)
+          /* Talking, and allowed to say so in a way that costs a repaint -
+             see the rows in the sidebar. The ring is not asked. */
+          const says = loud && watching
           return (
             <div
-              className={loud ? 'scell talking' : 'scell'}
+              className={says ? 'scell talking' : 'scell'}
               key={m.id}
               /*
                * Right-click a face for the same menu a picture gets, which
@@ -148,8 +181,7 @@ export function Stage({ world, call, controls, name, master, onClose }: {
                       sidebar - the ring is what carries on saying who is
                       talking. */}
                   {voiceLabel({
-                    mine: m.id === me, deaf: call.deaf, muted: m.muted,
-                    loud: loud && watching,
+                    mine: m.id === me, deaf: call.deaf, muted: m.muted, loud: says,
                   })}
                 </span>
               </div>

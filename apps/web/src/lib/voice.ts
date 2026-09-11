@@ -121,6 +121,18 @@ export class Voice {
   private carried:
     { video: MediaStreamTrack; audio: MediaStreamTrack | null; quiet: boolean } | null = null
   private lk: typeof import('livekit-client') | null = null
+  /*
+   * What this client has asked to watch.
+   *
+   * Kept here as well as in the call state because the decision has to be
+   * made again for a track that does not exist yet. Watching subscribes what
+   * is published at the moment it is pressed, and a screen that is stopped
+   * and started again - or one shared without sound, then with it - arrives
+   * afterwards as a new publication. Nothing was subscribing those, so the
+   * picture came back and the sound did not, depending entirely on the order
+   * somebody happened to do things in.
+   */
+  private watched = new Set<StreamKey>()
   /** Who the room says it can hear, and whether the gate has us open. */
   private speakers: Id[] = []
   private selfSpeaking = false
@@ -254,8 +266,14 @@ export class Voice {
          asks for it. Without this, "not watching" would be a curtain over a
          stream still being sent, and the saving it exists for would be
          imaginary. */
-      .on(lk.RoomEvent.TrackPublished, (pub) => {
-        if (sourceOf(String(pub.source)) === 'voice') pub.setSubscribed(true)
+      .on(lk.RoomEvent.TrackPublished, (pub, who) => {
+        const source = sourceOf(String(pub.source))
+        if (source === 'voice') { pub.setSubscribed(true); return }
+        /* And a screen, or the sound of one, belonging to somebody already
+           being watched. Both share a key, so the sound of a share is
+           subscribed by the same answer that subscribes the picture. */
+        if (!source) return
+        if (this.watched.has(keyOf(source, idOf(who.identity)))) pub.setSubscribed(true)
       })
       .on(lk.RoomEvent.ParticipantConnected, (who) => {
         this.takeVoices(who)
@@ -331,6 +349,7 @@ export class Voice {
        fires for people who turn up after. */
     for (const who of room.remoteParticipants.values()) this.takeVoices(who)
     await room.localParticipant.setMicrophoneEnabled(true, constraints(mic))
+    await this.cleanUpMic(mic)
 
     /* My own microphone, so the level meter has something to read before
        anybody else has said a word. */
@@ -352,8 +371,14 @@ export class Voice {
    * the track itself and pointed each new connection at it, so a move was
    * invisible to whatever was being shared.
    */
+  /** Nothing is being watched once we are not in the room. */
+  private forgetWatched(): void { this.watched.clear() }
+
   async leave(opts: { keepShare?: boolean } = {}): Promise<void> {
     if (opts.keepShare) await this.liftShare()
+    /* Nothing here is being watched any more, and a name carried into the
+       next room would subscribe somebody nobody asked about. */
+    this.forgetWatched()
     const room = this.room
     this.room = null
     if (!room) return
@@ -411,6 +436,7 @@ export class Voice {
 
   async setMic(on: boolean, mic: MicChoice): Promise<void> {
     await this.room?.localParticipant.setMicrophoneEnabled(on, constraints(mic))
+    if (on) await this.cleanUpMic(mic)
   }
 
   /**
@@ -434,6 +460,7 @@ export class Voice {
     try {
       await me.setMicrophoneEnabled(false)
       await me.setMicrophoneEnabled(true, constraints(mic))
+      await this.cleanUpMic(mic)
     } catch { /* the device went away; the call itself is fine */ }
   }
 
@@ -671,6 +698,10 @@ export class Voice {
    * saving happening two hops earlier.
    */
   async setWatching(key: StreamKey, on: boolean): Promise<void> {
+    /* Written down first, and regardless of whether there is anything to
+       subscribe yet: the case this exists for is somebody pressing watch on a
+       share that has not been published again yet. */
+    this.remember(key, on)
     const lk = this.lk
     if (!this.room || !lk) return
     const cut = key.indexOf(':')
@@ -684,7 +715,61 @@ export class Voice {
     }
   }
 
+  /** Written down before the asking, so anything arriving later is answered
+      for too - see `watched`. */
+  private remember(key: StreamKey, on: boolean): void {
+    if (on) this.watched.add(key)
+    else this.watched.delete(key)
+  }
+
   /** One of my own streams, asked for rather than remembered — see setShare. */
+  /**
+   * Put the denoiser on the microphone that was just published.
+   *
+   * Separate from publishing it because the microphone is published from
+   * three places - joining, unmuting, and changing device - and a cleaner
+   * that only ran on one of them would be a setting that worked depending on
+   * how you got here. That is the shape of half the faults in this app.
+   *
+   * Every failure here is swallowed on purpose, and the failure is always the
+   * same one: the plain microphone stays published. A denoiser that will not
+   * load costs somebody a keyboard in the background; a denoiser that throws
+   * on the way in and takes the track with it costs them their voice.
+   */
+  private async cleanUpMic(mic: MicChoice): Promise<void> {
+    if (!mic.noiseSuppression) return
+    const lk = this.lk
+    const me = this.room?.localParticipant
+    if (!lk || !me) return
+    try {
+      const track = me.getTrackPublication(lk.Track.Source.Microphone)?.audioTrack
+      if (!track) return
+      /* Already wearing one - unmuting republishes the same processed track
+         rather than a fresh one, and setting a second would be a graph on a
+         graph. */
+      if (track.getProcessor()) return
+      /*
+       * Fetched here rather than imported at the top, and this is the whole
+       * of what makes the promise above true.
+       *
+       * The denoiser's own package declares a class that extends
+       * AudioWorkletNode at the moment it is loaded, so on anything without
+       * audio worklets merely importing it throws - and an import at the top
+       * of this file throws while *this* file is loading, which would take
+       * voice with it. Not "no denoiser" but "no calls at all", from a
+       * feature nobody asked to depend on.
+       *
+       * Inside the try, so that stays a shrug.
+       */
+      const { rnnoise } = await import('./denoise')
+      await track.setProcessor(rnnoise())
+    } catch {
+      /* No worklet, no WebAssembly, a context at the wrong rate, or a browser
+         that has never heard of any of it. The call carries on unprocessed,
+         which is exactly where it was before this existed. */
+    }
+  }
+
   myTrack(source: Source): MediaStream | null {
     const lk = this.lk
     const me = this.room?.localParticipant

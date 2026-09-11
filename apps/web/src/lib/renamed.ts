@@ -34,6 +34,10 @@ export const KEPT = [
      the account - and why it has to be carried like everything else that
      lives on the machine. */
   'hideMuted',
+  /* How loud each person is. On the machine rather than the account,
+     because it is a fact about the speakers somebody is listening
+     through - see levels.ts. */
+  'levels',
 ] as const
 
 /** The one that is a whole blob of preferences rather than a single value. */

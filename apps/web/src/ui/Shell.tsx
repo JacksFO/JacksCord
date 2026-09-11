@@ -4955,8 +4955,23 @@ function InCall({ call, world, name, onStage }: {
       {c.members.map((m) => {
         const person = world.people.get(m.id) ?? someone(m.id, m.name)
         const loud = c.speaking.has(m.id)
+        /*
+         * Two different questions, which is the bit that was got wrong the
+         * first time round.
+         *
+         * `loud` is whether they are talking, and the ring says so whether or
+         * not anybody is here to see it - that was asked for. `says` is
+         * whether the row is allowed to *restyle* itself about it: the word
+         * changes and the stylesheet makes it heavier, so every turn of a
+         * conversation re-laid the line out in a window nobody was reading.
+         *
+         * Worked out once and used for both the class and the word, because
+         * the first attempt fixed the word and left the class, and the line
+         * went on changing colour and weight exactly as before.
+         */
+        const says = loud && watching
         return (
-          <button className={loud ? 'vrow sp' : 'vrow'} key={m.id}>
+          <button className={says ? 'vrow sp' : 'vrow'} key={m.id}>
             <span className={loud ? 'ring on' : 'ring'}>
               <Avatar user={person} size="md" />
             </span>
@@ -4981,7 +4996,7 @@ function InCall({ call, world, name, onStage }: {
                   */}
                 {voiceLabel({
                   mine: m.id === world.me.id, deaf: c.deaf,
-                  muted: m.muted, loud: loud && watching, sharing: m.sharing,
+                  muted: m.muted, loud: says, sharing: m.sharing,
                 })}
               </span>
             </span>

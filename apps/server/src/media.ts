@@ -142,6 +142,29 @@ function getPinned(
          makes connecting by address safe rather than merely direct. */
       servername: url.hostname,
     }, (res) => {
+      /*
+       * The response's own errors, which are not the request's.
+       *
+       * This took the whole server down. Once a response has begun, node
+       * stops reporting a dropped connection on the request object and
+       * destroys the *response* instead - so the handler two lines below was
+       * watching the wrong object, nothing was listening here, and an
+       * unhandled error event on a stream ends the process. A remote host
+       * hanging up in the middle of sending a picture was enough:
+       *
+       *   Error: aborted
+       *     at TLSSocket.socketCloseListener (node:_http_client)
+       *   uncaught exception, shutting down for a clean restart
+       *
+       * Which is every link anybody posts, fetched on their behalf. Two
+       * minutes down, and nothing about it was the app's own doing.
+       *
+       * Listened for rather than handled: toWeb passes the failure on to
+       * whoever is reading the body, and they already cope with a fetch that
+       * stops early. This is only here so that passing it on is not preceded
+       * by the process dying.
+       */
+      res.on('error', () => { /* the reader is told; see above */ })
       const status = res.statusCode ?? 0
       resolve({
         ok: status >= 200 && status < 300,
@@ -156,6 +179,10 @@ function getPinned(
       })
     })
     req.on('timeout', () => { req.destroy(new Error('that link took too long')) })
+    /* Before a response begins. Afterwards the failure arrives on the
+       response instead, which is what the listener above is for - and
+       rejecting a promise that has already settled is a no-op, so this
+       staying here costs nothing and covers the earlier half. */
     req.on('error', reject)
     req.end()
   })

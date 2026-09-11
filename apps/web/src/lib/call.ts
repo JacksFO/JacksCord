@@ -1,4 +1,5 @@
 import type { Id } from './wire'
+import { rememberedLevels } from './levels'
 
 /**
  * What is in a call, and what each of it is.
@@ -90,7 +91,13 @@ export function emptyCall(): Call {
   return {
     channel: null, since: 0, members: [], quality: 'unknown',
     video: new Map(), sounds: new Map(), speaking: new Set(),
-    levels: new Map(), watching: new Set(),
+    /*
+     * Not empty: how loud somebody is was set on purpose and is about them,
+     * not about this particular call. Seeded here rather than at each of the
+     * five places a call is made or cleared, because four of those are the
+     * ones nobody would remember to change.
+     */
+    levels: rememberedLevels(), watching: new Set(),
     muted: false, deaf: false,
     shareAudio: { has: false, on: false },
   }

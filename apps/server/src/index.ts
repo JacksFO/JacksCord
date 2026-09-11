@@ -1,4 +1,5 @@
 import { isConversationKind } from './kinds.js'
+import { survivable } from './survivable.js'
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import fastifyStatic from '@fastify/static'
@@ -1137,6 +1138,23 @@ process.on('unhandledRejection', (reason) => {
  * starts a clean one.
  */
 process.on('uncaughtException', (err) => {
+  /*
+   * Unless it is a connection ending, which is not an unknown state.
+   *
+   * On 11 September a remote host reset a connection in the middle of an
+   * outbound fetch - a picture somebody had linked - and this took the server
+   * down with it. Everybody was disconnected, voice calls included, for the
+   * two minutes it took the watchdog to notice, over a link that had nothing
+   * to do with this app.
+   *
+   * The rule is in survivable.ts and is deliberately narrow: network
+   * conditions, by name. Anything else still stands down, because the reason
+   * for standing down is real.
+   */
+  if (survivable(err)) {
+    app.log.error({ err }, 'a connection ended abruptly; carrying on')
+    return
+  }
   app.log.fatal({ err }, 'uncaught exception, shutting down for a clean restart')
   setTimeout(() => process.exit(1), 100).unref()
 })
