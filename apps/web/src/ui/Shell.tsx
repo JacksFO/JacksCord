@@ -81,6 +81,7 @@ import { Intro } from './Intro'
 import { voiceLabel } from '../lib/voiceLabel'
 import { useWatching } from './useWatching'
 import { openingScreen, rememberScreen } from '../lib/place'
+import { keyOf, volumeOf } from '../lib/call'
 import { useVoiceGate } from './useVoiceGate'
 import { useNotify } from './useNotify'
 import { usePushToTalk } from './usePushToTalk'
@@ -641,6 +642,55 @@ export function Shell({
         onPick: () => setCard({ id, anchor: { x, y, w: 0, h: 0 } }),
       },
     ]
+    /*
+     * How loud they are, when they are in the call you are in.
+     *
+     * Only then: a slider for somebody who is not making any sound is a
+     * control for nothing, and the number it showed would be about a call
+     * that is not happening. Absent rather than dead, like everything else
+     * here.
+     *
+     * Their voice and their screen are separate on purpose - turning a game
+     * down must not turn down the person describing it - so a person who is
+     * sharing gets two.
+     */
+    if (id !== world.me.id && call.call.members.some((m) => m.id === id)) {
+      const voiceKey = keyOf('voice', id)
+      const level = Math.round(volumeOf(call.call, voiceKey, settings.volume) * 100)
+      items.push({ kind: 'rule' })
+      items.push({
+        kind: 'range', label: 'How loud they are', icon: 'head',
+        note: level === 0 ? 'Muted' : `${level}%`,
+        value: level,
+        onSet: (v) => call.setLevel(voiceKey, v),
+      })
+      const sharing = call.call.members.find((m) => m.id === id)?.sharing
+      if (sharing) {
+        const screenKey = keyOf('share', id)
+        const at = Math.round(volumeOf(call.call, screenKey, settings.volume) * 100)
+        items.push({
+          kind: 'range', label: 'Their screen', icon: 'share',
+          note: at === 0 ? 'Muted' : `${at}%`,
+          value: at,
+          onSet: (v) => call.setLevel(screenKey, v),
+        })
+        /* And a way to actually look at it, which the sidebar had no way to
+           offer at all - the little monitor beside their name said somebody
+           was sharing and gave nobody anything to press. */
+        const watching = call.call.watching.has(screenKey)
+        items.push({
+          kind: 'item',
+          label: watching ? 'Stop watching their screen' : 'Watch their screen',
+          icon: 'share',
+          onPick: () => {
+            call.setWatching(screenKey, !watching)
+            if (!watching) setOnStage(true)
+          },
+        })
+      }
+      items.push({ kind: 'rule' })
+    }
+
     if (id !== world.me.id) {
       items.push({
         kind: 'item', label: 'Message', icon: 'chat',
@@ -1791,6 +1841,8 @@ export function Shell({
       />
 
       <Channels
+        onWho={whoMenu}
+        onCard={(id, el) => setCard({ id, anchor: anchorOf(el) })}
         onCategory={(id, name, x, y) => {
           /*
            * A heading is a thing like any other now that it is a row: it can
@@ -3146,10 +3198,14 @@ function Channels({
   space, channels, chats, current, onPick, world, onSettings, call, onStage,
   page, onPage, canManage, canOpenSettings, canInvite, onInvite, onNewGroup,
   onServerSettings, onRules, onChatRules, onCloseChat, onShut, fold, grip, onMe, onReorder,
-  onNewCategory, onNewChannel, onCategory, onReadAll,
+  onNewCategory, onNewChannel, onCategory, onReadAll, onWho, onCard,
 }: {
   /** Clear everything waiting where you are looking. */
   onReadAll: (ids: Id[]) => void
+  /* Passed down to the call panel, so people in a call get the same menu and
+     the same card as people anywhere else in the app. */
+  onWho: (id: Id, x: number, y: number) => void
+  onCard: (id: Id, el: Element) => void
   /** Asked for from the blank space under the channels. */
   onNewCategory: (x: number, y: number) => void
   /** Make a channel under a heading, or loose at the top when there is none. */
@@ -3540,7 +3596,7 @@ function Channels({
       {call.call.channel && (
         <InCall call={call} world={world}
           name={channels.find((c) => c.id === call.call.channel)?.name ?? 'Voice'}
-          onStage={onStage} />
+          onStage={onStage} onWho={onWho} onCard={onCard} />
       )}
 
       {/* Your own banner, behind your own name — the same one a profile card
@@ -4880,11 +4936,16 @@ function VoiceRoom({ channel, call, world, here: fromGateway, onJoin, onRules, .
  * and then go and read a channel — so the controls have to be reachable
  * without the stage, or leaving means finding your way back to it first.
  */
-function InCall({ call, world, name, onStage }: {
+function InCall({ call, world, name, onStage, onWho, onCard }: {
   call: CallControls
   world: World
   name: string
   onStage: () => void
+  /* The same menu a person gets anywhere else, and the same card. These rows
+     had neither: the one list in the app showing who is talking to you was
+     the one place you could not click a person. */
+  onWho: (id: Id, x: number, y: number) => void
+  onCard: (id: Id, el: Element) => void
 }) {
   const c = call.call
   /* Whether the word under each face is allowed to change - see the rows
@@ -4980,7 +5041,27 @@ function InCall({ call, world, name, onStage }: {
          */
         const says = loud && watching
         return (
-          <button className={says ? 'vrow sp' : 'vrow'} key={m.id}>
+          <button
+            className={says ? 'vrow sp' : 'vrow'}
+            key={m.id}
+            /*
+             * The same two ways in that a person has anywhere else: their
+             * card on a click, their menu on a right-click.
+             *
+             * These rows had neither. The one list in the app that shows who
+             * is actually talking to you was the one place a person could not
+             * be clicked - so making somebody quieter, or looking at their
+             * screen, meant opening the stage to find a tile of them. The
+             * menu already knew how to silence, deafen and remove somebody
+             * from a call, gated on what you may do; none of it was reachable
+             * from here.
+             */
+            onClick={(e) => onCard(m.id, e.currentTarget)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              onWho(m.id, e.clientX, e.clientY)
+            }}
+          >
             <span className={loud ? 'ring on' : 'ring'}>
               <Avatar user={person} size="md" />
             </span>

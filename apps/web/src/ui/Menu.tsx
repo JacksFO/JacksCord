@@ -27,6 +27,27 @@ export type MenuItem =
       onPick: () => void
     }
   | { kind: 'rule' }
+  /**
+   * A slider, for the one thing a menu cannot say with a row.
+   *
+   * How loud somebody is has no sensible set of choices - it is a number
+   * anybody wants to nudge while listening - so offering four presets would
+   * be answering a different question. It lives in the menu because that is
+   * where somebody is already looking when they think "they are too loud".
+   *
+   * Unlike every other row, moving it does not close the menu: the whole
+   * point is to hear the change and move it again.
+   */
+  | {
+      kind: 'range'
+      label: string
+      icon?: IconName
+      /** 0 to 100. */
+      value: number
+      /** What to say beside the label - the number, or "Muted". */
+      note?: string
+      onSet: (value: number) => void
+    }
 
 /**
  * A menu, where the pointer was.
@@ -115,6 +136,22 @@ export function Menu({ x, y, items, onClose }: {
           )
           : row.items.map((item, j) => item.kind === 'rule'
             ? <div className="msep" key={`${i}-${j}`} />
+            : item.kind === 'range'
+            ? (
+              <div className="mrange" key={`${i}-${j}`}>
+                <span className="mrl">
+                  {item.icon && <Icon name={item.icon} size={15} />}
+                  {item.label}
+                  {item.note && <span className="cm-key">{item.note}</span>}
+                </span>
+                <input
+                  type="range" className="rng" min={0} max={100} value={item.value}
+                  onChange={(e) => item.onSet(Number(e.target.value))}
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                />
+              </div>
+            )
             : (
               <button
                 key={`${i}-${j}`}
