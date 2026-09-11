@@ -79,6 +79,7 @@ import { useSwipe } from './useSwipe'
 import { TopBar } from './TopBar'
 import { Intro } from './Intro'
 import { voiceLabel } from '../lib/voiceLabel'
+import { useWatching } from './useWatching'
 import { useVoiceGate } from './useVoiceGate'
 import { useNotify } from './useNotify'
 import { usePushToTalk } from './usePushToTalk'
@@ -4877,6 +4878,9 @@ function InCall({ call, world, name, onStage }: {
   onStage: () => void
 }) {
   const c = call.call
+  /* Whether the word under each face is allowed to change - see the rows
+     below. The ring is not asked; it keeps up either way. */
+  const watching = useWatching()
   /* Read off the roster, the same way the stage reads it, so both bars agree
      about whether a share is running. */
   const sharing = !!c.members.find((m) => m.id === world.me.id)?.sharing
@@ -4961,9 +4965,23 @@ function InCall({ call, world, name, onStage }: {
                 {nameIn(world, spaceOfChannel(world, c.channel), person)}
               </span>
               <span className="s">
+                {/*
+                  * Still, while nobody is looking.
+                  *
+                  * This word changes every time somebody starts or stops
+                  * talking, and the stylesheet makes it heavier when it says
+                  * Speaking - so each turn of a conversation re-laid the line
+                  * out, in a window on another monitor that nobody was
+                  * reading. The rule that quietens everything else cannot
+                  * reach this: it pauses animations, and this is neither an
+                  * animation nor a transition but a different word.
+                  *
+                  * The ring keeps up regardless, which is the one thing that
+                  * was asked to carry on moving.
+                  */}
                 {voiceLabel({
                   mine: m.id === world.me.id, deaf: c.deaf,
-                  muted: m.muted, loud, sharing: m.sharing,
+                  muted: m.muted, loud: loud && watching, sharing: m.sharing,
                 })}
               </span>
             </span>

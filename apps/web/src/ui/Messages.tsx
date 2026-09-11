@@ -1,5 +1,6 @@
 import { Fragment, useMemo, useState } from 'react'
 import { actionsFor } from '../lib/actions'
+import { joinsRun } from '../lib/messageRun'
 import { BY_NAME } from '../lib/emoji'
 import { Embeds } from './Embed'
 import { CallRow } from './CallRow'
@@ -241,7 +242,9 @@ export function Messages({
      messages where most of them are replies is that search a few hundred
      times, on every single render. */
   const byId = new Map(messages.map((m) => [m.id, m]))
-  let prevAuthor: string | null = null
+  /* The whole message rather than just who wrote it, because how long ago it
+     was said is now part of whether the next one joins it. */
+  let prev: Message | null = null
   let prevDay = ''
 
   /*
@@ -390,10 +393,12 @@ export function Messages({
         const newDay = day !== prevDay
         if (newDay) prevDay = day
 
-        /* A run is broken by a new day and by a reply, because both of those
-           are a reason to see who is speaking again. */
-        const run = !newDay && prevAuthor === m.author_id && !m.reply_to
-        prevAuthor = m.author_id
+        /* A run is broken by a new day, by a reply, and by a long enough
+           quiet - all three being reasons to see who is speaking, and when.
+           The rule is in messageRun.ts, where it can be tested at a chosen
+           moment rather than whenever the suite happens to run. */
+        const run = joinsRun(prev, m, newDay)
+        prev = m
 
         const theirRoles = space
           ? rolesOf(who.id, space, world.roles, world.assignments)

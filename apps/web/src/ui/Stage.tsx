@@ -1,4 +1,5 @@
 import { voiceLabel } from '../lib/voiceLabel'
+import { useWatching } from './useWatching'
 import { nameIn, spaceOfChannel } from '../lib/names'
 import { useEffect, useRef, useState } from 'react'
 import { keyOf, partsOf, tilesOf, watched, type Call, type StreamKey } from '../lib/call'
@@ -31,6 +32,9 @@ export function Stage({ world, call, controls, name, master, onClose }: {
   onClose: () => void
 }) {
   const me = world.me.id
+  /* Whether the word under each face is allowed to change while nobody is
+     looking at the window. */
+  const watching = useWatching()
   /* Which server's room this is, resolved once for every name below.
      Null for a conversation's call, where nobody has been renamed. */
   const here = spaceOfChannel(world, call.channel)
@@ -140,8 +144,12 @@ export function Stage({ world, call, controls, name, master, onClose }: {
                 </span>
                 <span className="nm2">{nameIn(world, here, person)}</span>
                 <span className="sub">
+                  {/* Held still while nobody is looking, like the rows in the
+                      sidebar - the ring is what carries on saying who is
+                      talking. */}
                   {voiceLabel({
-                    mine: m.id === me, deaf: call.deaf, muted: m.muted, loud,
+                    mine: m.id === me, deaf: call.deaf, muted: m.muted,
+                    loud: loud && watching,
                   })}
                 </span>
               </div>
