@@ -3,6 +3,7 @@ import { useWatching } from './useWatching'
 import { nameIn, spaceOfChannel } from '../lib/names'
 import { useEffect, useRef, useState } from 'react'
 import { keyOf, partsOf, tilesOf, watched, type Call, type StreamKey } from '../lib/call'
+import { bestGrid } from '../lib/stageGrid'
 import type { Id } from '../lib/wire'
 import type { World } from '../lib/world'
 import { Avatar } from './Avatar'
@@ -73,6 +74,34 @@ export function Stage({ world, call, controls, name, master, onClose }: {
    * a new array every render - and the keys are joined with a character that
    * cannot appear in one.
    */
+  /*
+   * How big the faces may be, measured rather than left to the stylesheet.
+   *
+   * A grid cannot be told "as large as fits", because the answer needs the
+   * number of people and the height of the box at the same time and CSS will
+   * consider only one of them. So the box is measured and the rule in
+   * stageGrid.ts is asked. See there for what it used to do instead.
+   */
+  const [box, setBox] = useState<{ width: number; height: number } | null>(null)
+  useEffect(() => {
+    const el = body.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const measure = () => {
+      const r = el.getBoundingClientRect()
+      /* Inside the padding: the tiles live in the content box, and laying
+         them out against the border box is how a grid comes to be a few
+         pixels too tall for the thing it is in. */
+      const pad = getComputedStyle(el)
+      const x = parseFloat(pad.paddingLeft) + parseFloat(pad.paddingRight)
+      const y = parseFloat(pad.paddingTop) + parseFloat(pad.paddingBottom)
+      setBox({ width: Math.max(0, r.width - x), height: Math.max(0, r.height - y) })
+    }
+    measure()
+    const watching = new ResizeObserver(measure)
+    watching.observe(el)
+    return () => watching.disconnect()
+  }, [])
+
   const tileList = tiles.join('|')
   useEffect(() => {
     const there = tileList.split('|')
@@ -81,6 +110,17 @@ export function Stage({ world, call, controls, name, master, onClose }: {
   const facesOnly = call.members.filter(
     (m) => !tiles.some((k) => partsOf(k).id === m.id),
   )
+  /*
+   * How large each face may be. Tiles and faces both, because the same grid
+   * lays out both - somebody with no camera still takes a cell.
+   *
+   * Not while one screen is filling the stage: that is a different layout
+   * with one thing in it, and the stylesheet already handles it.
+   */
+  const grid = box && !filling
+    ? bestGrid({ count: tiles.length + facesOnly.length, ...box })
+    : null
+
   const theirShares = call.members.filter((m) => m.sharing && m.id !== me)
   const unwatched = theirShares.filter((m) => !call.watching.has(keyOf('share', m.id)))
 
@@ -134,6 +174,22 @@ export function Stage({ world, call, controls, name, master, onClose }: {
           filling ? 'stbody big'
             : tiles.length === 1 && call.members.length <= 2 ? 'stbody one' : 'stbody'
         }
+        /*
+         * The columns and the size of a cell, worked out from the box and the
+         * number of people - see stageGrid.ts. Handed to the stylesheet as
+         * variables rather than set on each tile, so there is still one rule
+         * describing the grid and this only tells it how big.
+         *
+         * Absent while a screen fills the stage, where the stylesheet has its
+         * own answer, and absent before the first measurement - the grid it
+         * had before is the right thing to fall back to.
+         */
+        style={grid && grid.width > 0 ? {
+          gridTemplateColumns: `repeat(${grid.columns}, ${grid.width}px)`,
+          gridAutoRows: `${grid.height}px`,
+          justifyContent: 'center',
+          alignContent: 'center',
+        } : undefined}
       >
         {tiles.map((key) => (
           <Tile
