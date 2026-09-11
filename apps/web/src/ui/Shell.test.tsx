@@ -70,11 +70,22 @@ const server = {
 
 const noop = () => {}
 
-const draw = (w: World = world()) => renderToStaticMarkup(
+/*
+ * Opened in the server, on purpose.
+ *
+ * The app opens where you were and Home the first time, so a Shell built
+ * fresh in a test has never been anywhere and lands on Home - where there is
+ * no channel list to find "general" in. This says where it was, which is what
+ * a real launch would have found.
+ */
+const openedIn = (id: string) => localStorage.setItem('atrium.where',
+  JSON.stringify({ where: { kind: 'space', id }, page: null }))
+
+const draw = (w: World = world()) => (openedIn('s1'), renderToStaticMarkup(
   <Shell world={w} server={server} onOut={noop} send={noop} gateway={null}
     settings={DEFAULTS} set={noop} reset={noop} version={0} changed={() => {}}
     stale={false} error="" clearError={noop} />,
-)
+))
 
 describe('the app', () => {
   it('draws', () => {

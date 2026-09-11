@@ -233,6 +233,19 @@ async function signIn(js, { owner = 'Owner', friends = [] }) {
        sign-in that silently never happens, which is exactly how this looked
        when the suite was pointed at the client people actually use. */
     localStorage.setItem('atrium.token', me.token)
+    /*
+     * And open in the server this just made.
+     *
+     * The app opens where you were, and Home the first time - so without
+     * this every spec would start on Home and have to walk into a server
+     * before touching its own subject. Said here, once, rather than in each
+     * of the eighty-nine.
+     *
+     * A spec about Home itself clears it; see intoServer for the ones that
+     * go the other way.
+     */
+    localStorage.setItem('atrium.where',
+      JSON.stringify({ where: { kind: 'space', id: first.id }, page: null }))
     /* The name as well as the id: a spec that wants to say "it names the
        server" should not have to know what this called it. */
     return { ok: true, me: { id: me.user.id, token: me.token },

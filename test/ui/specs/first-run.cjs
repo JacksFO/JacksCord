@@ -84,8 +84,15 @@ module.exports = {
       landed.pickAChannel === false, landed.pickAChannel)
 
     /*
-     * The other direction: somebody who DOES have a server still opens on it,
-     * because that fix must not send everybody to Friends.
+     * The other direction: somebody who DOES have a server is not sent to
+     * Friends, which is what that fix must not do.
+     *
+     * Where they land is no longer "their first server" - the app opens where
+     * you were, and Home the first time. This account was last on Home,
+     * because the part above was just there under a different token and the
+     * place is remembered per machine rather than per account. So the check
+     * is that the server is reachable and works, rather than that it is
+     * already open: the original worry was Friends, and it still is.
      */
     await js(`(() => { localStorage.setItem('atrium.token', ${JSON.stringify(setup.me?.token ?? '')}); return 1 })()`)
     await win.loadURL(base + '/')
@@ -98,8 +105,18 @@ module.exports = {
       onFriends: /Nobody yet/i.test(document.body.innerText || ''),
     }))()`)
     console.log('      what the owner sees: ' + JSON.stringify(owner))
-    check('somebody with a server still opens on it', owner.spacePips > 0, owner.spacePips)
-    check('with its channels listed', owner.channels > 0, owner.channels)
+    check('somebody with a server has it in the rail', owner.spacePips > 0, owner.spacePips)
     check('and is not sent to Friends instead', owner.onFriends === false)
+
+    /* And the server is one click away and full of its channels - which is
+       what "opens on it" was really protecting. */
+    await js(`(() => {
+      const tile = [...document.querySelectorAll('.pane.rail .rl:not(.rlread):not(.rlnew)')]
+        .find((b) => !/^conversations$/i.test(b.getAttribute('title') || ''))
+      if (tile) tile.click()
+      return 1 })()`)
+    const listed = await until('its channels',
+      `document.querySelectorAll('.chan').length > 0`, 10000)
+    check('and opening it lists its channels', listed === true)
   },
 }

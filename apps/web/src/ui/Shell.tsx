@@ -80,6 +80,7 @@ import { TopBar } from './TopBar'
 import { Intro } from './Intro'
 import { voiceLabel } from '../lib/voiceLabel'
 import { useWatching } from './useWatching'
+import { openingScreen, rememberScreen } from '../lib/place'
 import { useVoiceGate } from './useVoiceGate'
 import { useNotify } from './useNotify'
 import { usePushToTalk } from './usePushToTalk'
@@ -600,9 +601,13 @@ export function Shell({
    * of the offers for exactly that account - make or join a server, and add
    * somebody - so that is where they land.
    */
-  const [page, setPage] = useState<'home' | 'friends' | null>(
-    () => (world.spaces[0] ? null : 'home'),
-  )
+  /*
+   * Where you were, and Home the first time - see place.ts for why that is
+   * the shape rather than always-Home. Read once, together, so the page and
+   * the rail cannot open disagreeing about where you are.
+   */
+  const opening = useRef(openingScreen(world.spaces)).current
+  const [page, setPage] = useState<'home' | 'friends' | null>(() => opening.page)
   /* Which server is being walked out of, while the question is being asked. */
   const [leaving, setLeaving] = useState<Space | null>(null)
   const [leaveSaid, setLeaveSaid] = useState('')
@@ -962,9 +967,13 @@ export function Shell({
   /* Where you are: a server, or your conversations. One or the other, never
      both — a conversation belongs to nobody, which is the whole point of it. */
   const [where, setWhere] = useState<{ kind: 'space'; id: Id } | { kind: 'dms' }>(
-    () => (world.spaces[0] ? { kind: 'space', id: world.spaces[0].id } : { kind: 'dms' }),
+    () => opening.where,
   )
   const [channelId, setChannelId] = useState<Id | null>(null)
+  /* Written down as it changes rather than on the way out: there is no
+     reliable way out of a desktop app, and a place remembered a moment late
+     is no use to somebody whose machine went to sleep. */
+  useEffect(() => { rememberScreen({ where, page }) }, [where, page])
   /*
    * The channel you were last reading in each server.
    *

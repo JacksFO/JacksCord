@@ -82,8 +82,23 @@ describe('the page it shows', () => {
     for (const id of ['min', 'max', 'close']) expect(page).toContain(`id="${id}"`)
   })
 
-  it('and a way out that does not need the server', () => {
-    expect(page).toContain('clearServer')
+  it('and a way to try again that does not need the server', () => {
     expect(page).toContain('bridge.retry')
+  })
+
+  /*
+   * And no offer to point the app somewhere else.
+   *
+   * There used to be a "Use a different server" button here, from when this
+   * was a thing somebody ran themselves. There is one hosted Atrium now and
+   * its address is built in, so that button led nowhere - and it appeared on
+   * the one screen somebody reaches when things are already going wrong,
+   * which is the worst place to offer a dead end. Reported exactly that way.
+   */
+  it('and does not offer to send the app at a different server', () => {
+    /* Comments stripped first: the note explaining why that button went says
+       its name, and a note about a thing is not an offer of it. */
+    const offered = page.replace(/<!--[\s\S]*?-->/g, '')
+    expect(offered).not.toMatch(/clearServer|different server/i)
   })
 })

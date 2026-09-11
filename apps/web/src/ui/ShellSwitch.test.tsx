@@ -85,6 +85,16 @@ afterEach(() => {
 })
 
 function mount(w: World) {
+  /*
+   * Opened in the server, on purpose.
+   *
+   * The app opens where you were and Home the first time, so a Shell built
+   * fresh in a test has never been anywhere and lands on Home. This says
+   * where it was, which is what a real launch would have found.
+   */
+  localStorage.setItem('atrium.where',
+    JSON.stringify({ where: { kind: 'space', id: 's1' }, page: null }))
+
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)

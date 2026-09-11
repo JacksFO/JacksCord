@@ -38,6 +38,9 @@ export const KEPT = [
      because it is a fact about the speakers somebody is listening
      through - see levels.ts. */
   'levels',
+  /* And where the app was last open. Also a fact about this machine: the
+     same account on a laptop and at a desk is not in the same place. */
+  'where',
 ] as const
 
 /** The one that is a whole blob of preferences rather than a single value. */

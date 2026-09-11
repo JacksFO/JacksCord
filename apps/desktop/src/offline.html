@@ -136,9 +136,18 @@
       offline.
       <span class="where" id="where"></span>
     </p>
+    <!--
+      Only one button, because there is only one answer.
+
+      There used to be a "Use a different server" beside it, from when this
+      was a thing somebody ran themselves. It is one hosted app now, with its
+      address built in - so that button offered to point the app at nothing,
+      and the one place it appeared was the screen somebody reaches when
+      things are already going wrong. Waiting is the answer; the app retries
+      on its own and this says so below.
+    -->
     <div class="row">
       <button class="go" id="retry">Try again</button>
-      <button id="change">Use a different server</button>
     </div>
     <p class="note" id="note"></p>
   </main>
@@ -168,9 +177,6 @@
   }
 
   document.getElementById('retry').onclick = retry
-  document.getElementById('change').onclick = function () {
-    bridge.clearServer && bridge.clearServer()
-  }
 
   /*
     The main process is already retrying on its own; this is the same moment
