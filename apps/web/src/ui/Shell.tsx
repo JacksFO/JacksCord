@@ -5022,6 +5022,9 @@ function InCall({ call, world, name, onStage, onWho, onCard }: {
         </span>
       </button>
 
+      {/* The part that grows, and so the part that scrolls - see .vhud in the
+          stylesheet. The room's name above and the buttons below stay put. */}
+      <div className="vpeople">
       {c.members.map((m) => {
         const person = world.people.get(m.id) ?? someone(m.id, m.name)
         const loud = c.speaking.has(m.id)
@@ -5094,6 +5097,7 @@ function InCall({ call, world, name, onStage, onWho, onCard }: {
           </button>
         )
       })}
+      </div>
 
       <div className="vctl">
         <button className={c.muted ? 'off' : ''} title={c.muted ? 'Unmute' : 'Mute'}

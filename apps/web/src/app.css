@@ -1452,8 +1452,49 @@ body:has(.pgrip.on){cursor:ew-resize;user-select:none}
 .vcard .et{font-size:.76em;color:var(--fnt);font-style:italic}
 
 /* ---------- call panel ---------- */
+/*
+ * The call, and how much of the sidebar it is allowed to take.
+ *
+ * It took whatever it needed. The panel is a block in a flex column with the
+ * channel list above it, so every person who joined made it taller and took
+ * that height off the channels - three or four people and the list was a
+ * couple of rows and a scrollbar, which is what "it overlaps the channels"
+ * looks like from the outside.
+ *
+ * So it is capped, and the names inside it scroll. Half the panel is the most
+ * a call may take: enough to see who is in it at a glance, and never enough
+ * to bury the thing the sidebar is mainly for. The room's name and the
+ * buttons stay put, because they are the parts you reach for - it is only the
+ * list of people between them that moves.
+ */
 .vhud{margin:10px 10px 6px;border-radius:14px;border:1px solid var(--accl);overflow:hidden;
-  background:var(--rz)}
+  background:var(--rz);flex:0 1 auto;max-height:50%;min-height:0;
+  display:flex;flex-direction:column}
+/*
+ * And the channels keep a floor.
+ *
+ * Capping the panel was not enough on its own, and `flex:0 0 auto` made it
+ * worse: it said the panel may not shrink, so in a short window the channels
+ * were squeezed to fifty pixels while the panel sat at its full height.
+ * Measured, not guessed - the check beside this one reported 264 before a
+ * call and 56 during one.
+ *
+ * So the panel may shrink, and the list has a floor beneath which the flex
+ * algorithm will not take from it. The shrinking then lands on the panel,
+ * whose names scroll, which is the part that can afford to give.
+ */
+.sidepane .scroll{min-height:140px}
+.vhud .wv{flex:none}
+.vhud .vctl{flex:none}
+/*
+ * The names, which are the part that grows.
+ *
+ * min-height:0 because a flex child will not shrink below its content
+ * without it, and a scroller that cannot shrink is a scroller that never
+ * scrolls - it just pushes everything else out of the way instead, which is
+ * the bug.
+ */
+.vhud .vpeople{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain}
 .vhud .wv{position:relative;height:66px}
 /* Three bars beside the room's name, and only while the connection is worth
    remarking on. Sized off the text so it sits on the line rather than being
