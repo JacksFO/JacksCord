@@ -50,6 +50,23 @@ describe('a slider in a menu', () => {
     expect(document.body.textContent).toContain('40%')
   })
 
+  /*
+   * A name, which it had none of.
+   *
+   * The words beside it are a sibling span, so they gave it nothing - and the
+   * sweep that checks every control has a name audits what is on screen, so a
+   * control that only exists inside a menu is exactly what it cannot reach.
+   */
+  it('and has a name of its own, not just words beside it', () => {
+    show([{ kind: 'range', label: 'How loud they are', value: 40, onSet: () => {} }])
+    expect(slider()!.getAttribute('aria-label')).toBe('How loud they are')
+  })
+
+  it('and is read as Muted rather than as nought', () => {
+    show([{ kind: 'range', label: 'How loud', value: 0, note: 'Muted', onSet: () => {} }])
+    expect(slider()!.getAttribute('aria-valuetext')).toBe('Muted')
+  })
+
   it('and says Muted rather than 0%, when that is what it is', () => {
     show([{ kind: 'range', label: 'How loud they are', value: 0, note: 'Muted', onSet: () => {} }])
     expect(document.body.textContent).toContain('Muted')

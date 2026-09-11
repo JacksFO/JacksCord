@@ -145,6 +145,22 @@ export function Menu({ x, y, items, onClose }: {
                   {item.note && <span className="cm-key">{item.note}</span>}
                 </span>
                 <input
+                  /*
+                   * Named, because the words beside it are a sibling and give
+                   * it nothing.
+                   *
+                   * The sweep that checks every control has a name would have
+                   * caught this and structurally cannot: it audits what is on
+                   * screen, and a menu is shut. So the one control in the app
+                   * that only exists inside a menu is the one place that
+                   * check has no reach.
+                   *
+                   * aria-valuetext as well, so it is read as "Muted" rather
+                   * than as "0" - which is what it says on screen and not the
+                   * same thing as being turned down to nothing.
+                   */
+                  aria-label={item.label}
+                  {...(item.note ? { 'aria-valuetext': item.note } : {})}
                   type="range" className="rng" min={0} max={100} value={item.value}
                   onChange={(e) => item.onSet(Number(e.target.value))}
                   onClick={(e) => e.stopPropagation()}
